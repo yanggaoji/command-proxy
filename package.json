@@ -1,0 +1,37 @@
+{
+  "name": "command-proxy",
+  "version": "1.0.0",
+  "description": "Run commands in a local directory on a remote server, with continuous two-way file sync.",
+  "type": "module",
+  "bin": {
+    "command-proxy": "bin/command-proxy.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-mutagen.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "ssh",
+    "remote",
+    "mutagen",
+    "sync",
+    "cli",
+    "command"
+  ],
+  "author": "yanggaoji",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1"
+  }
+}
