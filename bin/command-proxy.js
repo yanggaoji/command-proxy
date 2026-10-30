@@ -300,6 +300,7 @@ kept in sync in both directions with Mutagen.
 
 Usage:
   command-proxy [options] <command> [args...]
+  cmdp [options] <command> [args...]
   command-proxy --sync | --status | --init | --ignore | --reset
 
 Options (only recognized before the command):

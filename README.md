@@ -49,6 +49,8 @@ Install with:
 npm install -g command-proxy
 ```
 
+This also installs `cmdp` as a shorter alias for `command-proxy`.
+
 ### Mutagen installation
 
 The npm `postinstall` script downloads the Mutagen release for the current
@@ -59,9 +61,15 @@ directory. command-proxy prefers that copy over `PATH`, so a stale system
 Mutagen does not get in the way.
 
 The download is roughly 100 MB. It is skipped when Mutagen 0.15 or newer is
-already on `PATH`. If the download fails (for example, while offline), the npm
-installation still succeeds and command-proxy reports the problem when it is
-run. Retry the download with:
+already on `PATH`. The download honors `HTTPS_PROXY`, `HTTP_PROXY`,
+`ALL_PROXY`, and `NO_PROXY` (the lowercase forms work too). On Windows, when
+none of them are set, the system proxy configured in Internet Settings is used
+automatically. PAC files (`AutoConfigURL`) are not evaluated, and only HTTP
+and HTTPS proxies are supported; SOCKS proxy URLs are ignored.
+
+If the download fails (for example, while offline), the npm installation still
+succeeds and command-proxy reports the problem when it is run. Retry the
+download with:
 
 ```sh
 npm rebuild command-proxy

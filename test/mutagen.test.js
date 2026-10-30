@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -71,6 +72,32 @@ async function serveRelease(t, { asset, archive, checksum }) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   return `http://127.0.0.1:${server.address().port}`;
+}
+
+/** A minimal CONNECT proxy, which is what undici's ProxyAgent uses. */
+async function serveProxy(t) {
+  let connections = 0;
+  const server = createServer();
+  server.on('connect', (request, clientSocket, head) => {
+    connections += 1;
+    const index = request.url.lastIndexOf(':');
+    const host = request.url.slice(0, index);
+    const port = Number(request.url.slice(index + 1));
+    const upstream = connect(port, host, () => {
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      upstream.write(head);
+      upstream.pipe(clientSocket);
+      clientSocket.pipe(upstream);
+    });
+    upstream.on('error', () => clientSocket.destroy());
+    clientSocket.on('error', () => upstream.destroy());
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    connections: () => connections,
+  };
 }
 
 test('maps Node platforms and architectures to Mutagen targets', () => {
@@ -166,12 +193,38 @@ test('downloads, verifies, and installs a release', async (t) => {
     destinationDir: destination,
     releaseUrl: (name) => `${baseUrl}/${name}`,
     force: true,
+    proxy: null,
     log: () => {},
   });
 
   assert.equal(result.installed, true);
   assert.equal(result.path, path.join(destination, mutagenBinaryName()));
   assert.ok(existsSync(path.join(destination, 'mutagen-agents.tar.gz')));
+});
+
+test('downloads through an explicit proxy', async (t) => {
+  const dir = tempDir(t);
+  const asset = 'mutagen_test_test_v0.18.1.tar.gz';
+  const archive = makeArchive(dir, asset);
+  const checksum = sha256(archive);
+  const baseUrl = await serveRelease(t, { asset, archive, checksum });
+  const proxy = await serveProxy(t);
+  const destination = path.join(dir, 'installed');
+  const logs = [];
+
+  const result = await installMutagen({
+    version: '0.18.1',
+    target: { goos: 'test', goarch: 'test' },
+    destinationDir: destination,
+    releaseUrl: (name) => `${baseUrl}/${name}`,
+    force: true,
+    proxy: proxy.url,
+    log: (message) => logs.push(message),
+  });
+
+  assert.equal(result.installed, true);
+  assert.ok(proxy.connections() > 0, 'the download must use the proxy');
+  assert.ok(logs.some((message) => message.includes('using proxy')));
 });
 
 test('rejects a release whose checksum does not match', async (t) => {
@@ -191,6 +244,7 @@ test('rejects a release whose checksum does not match', async (t) => {
       destinationDir: path.join(dir, 'installed'),
       releaseUrl: (name) => `${baseUrl}/${name}`,
       force: true,
+      proxy: null,
       log: () => {},
     }),
     /checksum mismatch/,

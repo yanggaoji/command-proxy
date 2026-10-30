@@ -16,6 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
+import { redactProxy, resolveProxy } from './proxy.js';
 import {
   MUTAGEN_VERSION,
   bundledMutagenDir,
@@ -52,17 +54,26 @@ function systemMutagenUsable() {
   return !mutagenVersionTooOld(version);
 }
 
-async function downloadFile(url, destination) {
-  const response = await fetch(url, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(10 * 60_000),
-  });
-  if (!response.ok || !response.body) {
-    throw new Error(
-      `download failed (${response.status} ${response.statusText}): ${url}`,
-    );
+async function downloadFile(url, destination, proxy) {
+  const dispatcher = proxy ? new ProxyAgent(proxy) : null;
+  try {
+    const request = dispatcher ? undiciFetch : fetch;
+    const response = await request(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10 * 60_000),
+      ...(dispatcher ? { dispatcher } : {}),
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(
+        `download failed (${response.status} ${response.statusText}): ${url}`,
+      );
+    }
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
+  } finally {
+    if (dispatcher) {
+      await dispatcher.destroy();
+    }
   }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(destination));
 }
 
 async function sha256File(file) {
@@ -169,6 +180,7 @@ export function installArchive(
  *   destinationDir?: string,
  *   releaseUrl?: (filename: string) => string,
  *   force?: boolean,
+ *   proxy?: string | null,
  *   log?: (message: string) => void,
  * }} [options]
  * @returns {Promise<{ installed: boolean, path?: string, reason?: string }>}
@@ -199,19 +211,26 @@ export async function installMutagen(options = {}) {
   }
 
   const asset = mutagenAssetName(version, target);
+  const proxy =
+    options.proxy === undefined
+      ? resolveProxy(releaseUrl('SHA256SUMS'))
+      : options.proxy;
   const tempDir = mkdtempSync(path.join(os.tmpdir(), 'command-proxy-mutagen-'));
   try {
     log(`Mutagen ${version} is not installed; downloading ${asset}...`);
+    if (proxy) {
+      log(`using proxy ${redactProxy(proxy)}`);
+    }
     const archive = path.join(tempDir, asset);
     const checksums = path.join(tempDir, 'SHA256SUMS');
-    await downloadFile(releaseUrl('SHA256SUMS'), checksums);
+    await downloadFile(releaseUrl('SHA256SUMS'), checksums, proxy);
 
     const expected = parseChecksums(readFileSync(checksums, 'utf8')).get(asset);
     if (!expected) {
       throw new Error(`SHA256SUMS does not list ${asset}`);
     }
 
-    await downloadFile(releaseUrl(asset), archive);
+    await downloadFile(releaseUrl(asset), archive, proxy);
     const actual = await sha256File(archive);
     if (actual !== expected) {
       throw new Error(`checksum mismatch for ${asset}`);
