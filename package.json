@@ -29,6 +29,10 @@
   ],
   "author": "yanggaoji",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanggaoji/command-proxy.git"
+  },
   "publishConfig": {
     "access": "public"
   },
