@@ -1,6 +1,6 @@
 {
   "name": "command-proxy",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Run commands in a local directory on a remote server, with continuous two-way file sync.",
   "type": "module",
   "bin": {
